@@ -1,0 +1,1010 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Furniture Builder (Tabletop + Morph)</title>
+
+  <!-- Import map fixes bare specifiers like "three" -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <style>
+    :root{
+      --bg:#ffffff;
+      --panel:#ffffff;
+      --text:#0b1220;
+      --muted:#4a5568;
+      --line:#d7dde7;
+    }
+    html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    .wrap{display:grid;grid-template-columns:320px 1fr;height:100%;gap:16px;padding:16px;box-sizing:border-box;background:var(--bg)}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+    h3{margin:0 0 10px 0;font-size:16px}
+    label{display:block;margin-top:10px;font-size:12px;color:var(--muted)}
+    select{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--text);outline:none}
+    .row{display:flex;align-items:center;gap:10px;margin-top:12px}
+    .row label{margin:0;font-size:14px;color:var(--text)}
+    .stage{background:#ffffff;border:1px solid var(--line);border-radius:12px;position:relative;overflow:hidden}
+    canvas{display:block;width:100%;height:100%}
+    .badge{position:absolute;left:12px;bottom:12px;font-size:12px;color:var(--muted);background:rgba(255,255,255,0.8);border:1px solid var(--line);padding:6px 8px;border-radius:10px;backdrop-filter: blur(4px)}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <h3>Furniture Builder</h3>
+    <div id="step1">
+      <label for="shape">Shape</label>
+    <select id="shape">
+      <option value="rectangle">Rectangle</option>
+      <option value="square">Square</option>
+      <option value="round">Round</option>
+      <option value="oval">Oval</option>
+    </select>
+
+    <label for="preset">Preset</label>
+    <select id="preset"></select>
+    </div>
+ <br/>
+    <div id="step2" style="display:none">
+      <label for="finish" style="display:block;margin-top:10px;font-size:12px;color:var(--muted)">Finish</label>
+    <select id="finish" style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--text);outline:none">
+      <option value="none">None</option>
+      <option value="walnut">Walnut</option>
+      <option value="hickory">Hickory</option>
+      <option value="whiteoak">White Oak</option>
+    </select>
+    <br/>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+      <label style="font-size:12px;color:var(--muted);margin:0">Clearcoat</label>
+      <input id="clearcoat" type="range" min="0" max="1" step="0.05" value="0.0" style="flex:1" />
+      </div>
+   <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+      <label style="font-size:12px;color:var(--muted);margin:0 0 0 6px">Roughness</label>
+      <input id="roughnessMul" type="range" min="0.2" max="1.2" step="0.05" value="1.0" style="width:90px" />
+    </div>
+    <br/>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+      <label style="font-size:12px;color:var(--muted);margin:0">Environment</label>
+      <select id="env" style="width:140px;margin-left:6px;padding:6px;border-radius:6px;border:1px solid var(--line)">
+        <option value="none">None</option>
+        <option value="studio_small_05_1k">Studio (1k)</option>
+      </select>
+    </div>
+
+    </div>
+    <div id="step3" style="display:none">
+      <div class="row">
+        <input type="checkbox" id="autorotate" />
+        <label for="autorotate">Auto rotate</label>
+      </div>
+
+      <div class="row">
+      <input type="checkbox" id="hasLegs" />
+      <label for="hasLegs">Legs</label>
+      <select id="legStyle" style="margin-left:6px">
+        <option value="cyl">Cylindrical</option>
+        <option value="box">Square</option>
+        <option value="taper">Tapered</option>
+        <option value="turned">Turned</option>
+      </select>
+      <label for="legCount" style="margin-left:8px;font-size:12px;color:var(--muted)">Count</label>
+      <select id="legCount" style="width:60px;margin-left:6px;padding:6px;border-radius:6px;border:1px solid var(--line)">
+        <option value="4">4</option>
+        <option value="3">3</option>
+        <option value="1">Pedestal</option>
+      </select>
+      <label for="legHeight" style="margin-left:8px;font-size:12px;color:var(--muted)">Height</label>
+      <select id="legHeight" style="width:64px;margin-left:6px;padding:6px;border-radius:6px;border:1px solid var(--line)">
+        <option value="38">38</option>
+        <option value="39">39</option>
+        <option value="40" selected>40</option>
+        <option value="41">41</option>
+        <option value="42">42</option>
+      </select>
+      <label for="legHeightPreset" style="margin-left:8px;font-size:12px;color:var(--muted)">Preset</label>
+      <select id="legHeightPreset" style="width:110px;margin-left:6px;padding:6px;border-radius:6px;border:1px solid var(--line)">
+        <option value="manual">Manual</option>
+        <option value="short">Short (38")</option>
+        <option value="standard" selected>Standard (40")</option>
+        <option value="tall">Tall (42")</option>
+      </select>
+      <label for="legTaper" style="margin-left:8px;font-size:12px;color:var(--muted)">Taper</label>
+      <input id="legTaper" type="number" value="0.6" min="0.2" max="1" step="0.05" style="width:64px;margin-left:6px;padding:6px;border-radius:6px;border:1px solid var(--line)" />
+      <label for="legInset" style="margin-left:8px;font-size:12px;color:var(--muted)">Inset</label>
+      <input id="legInset" type="number" value="2" min="0" step="0.25" style="width:64px;margin-left:6px;padding:6px;border-radius:6px;border:1px solid var(--line)" />
+      <label for="leg3rot" style="margin-left:8px;font-size:12px;color:var(--muted)">3-leg rot°</label>
+      <input id="leg3rot" type="number" value="0" min="0" max="360" step="5" style="width:64px;margin-left:6px;padding:6px;border-radius:6px;border:1px solid var(--line)" />
+      <label for="legEasing" style="margin-left:8px;font-size:12px;color:var(--muted)">Leg easing</label>
+      <select id="legEasing" style="width:120px;margin-left:6px;padding:6px;border-radius:6px;border:1px solid var(--line)">
+        <option value="easeInOutCubic">Standard</option>
+        <option value="easeOutBack">Pop</option>
+        <option value="linear">Linear</option>
+      </select>
+      </div>
+
+    </div>
+
+    <!-- Navigation controls (always visible) -->
+    <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+      <button id="backBtn" style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:#fff">Back</button>
+      <div style="flex:1;text-align:center;color:var(--muted);font-size:13px" id="stepLabel">Step 1 of 3</div>
+      <button id="nextBtn" style="padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:#1a73e8;color:#fff">Next</button>
+    </div>
+
+    <div style="margin-top:10px;font-size:12px;color:var(--muted);line-height:1.35">
+      Drag to rotate • Scroll to zoom • Right-drag to pan<br/>
+      Outline is the same dashed “architectural blue” edge outline — now with smooth morphs.
+    </div>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="badge" id="badge"></div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+
+const SCALE = 0.02;     // inches -> scene units
+const THICKNESS = 1.5;  // inches
+const MORPH_MS = 520;
+
+// Placeholder presets (inches)
+const PRESETS = {
+  rectangle:[{label:'60 × 30',w:60,d:30},{label:'72 × 36',w:72,d:36},{label:'84 × 40',w:84,d:40}],
+  square:[{label:'36 × 36',w:36,d:36},{label:'42 × 42',w:42,d:42},{label:'48 × 48',w:48,d:48}],
+  round:[{label:'Ø 36',dia:36},{label:'Ø 42',dia:42},{label:'Ø 48',dia:48}],
+  oval:[{label:'72 × 42',w:72,d:42},{label:'84 × 46',w:84,d:46},{label:'96 × 52',w:96,d:52}]
+};
+
+const stage = document.getElementById("stage");
+const shapeSel = document.getElementById("shape");
+const presetSel = document.getElementById("preset");
+const autorotate = document.getElementById("autorotate");
+const badge = document.getElementById("badge");
+const finishEl = document.getElementById("finish");
+const clearcoatEl = document.getElementById("clearcoat");
+const roughnessMulEl = document.getElementById("roughnessMul");
+const envEl = document.getElementById("env");
+const backBtn = document.getElementById('backBtn');
+const nextBtn = document.getElementById('nextBtn');
+const stepLabel = document.getElementById('stepLabel');
+
+let uiStep = 1; // 1..3
+
+function showStep(n){
+  uiStep = Math.max(1, Math.min(3, n));
+  document.getElementById('step1').style.display = (uiStep===1) ? '' : 'none';
+  document.getElementById('step2').style.display = (uiStep===2) ? '' : 'none';
+  document.getElementById('step3').style.display = (uiStep===3) ? '' : 'none';
+  stepLabel.textContent = `Step ${uiStep} of 3`;
+  backBtn.disabled = (uiStep === 1);
+  if(uiStep === 3){ nextBtn.textContent = 'Done'; } else { nextBtn.textContent = 'Next'; }
+}
+// Clear inputs for a given step (called when navigating away using Back)
+function clearStepInputs(step){
+  if(step === 2){
+    // Reset finish controls
+    if(finishEl){ finishEl.value = 'none'; applyFinish('none'); }
+    if(clearcoatEl){ clearcoatEl.value = 0; fillMaterial.clearcoat = 0; fillMaterial.needsUpdate = true; }
+    if(roughnessMulEl){ roughnessMulEl.value = 1.0; if(currentRoughnessTexture) fillMaterial.roughness = 0.6 * 1.0; fillMaterial.needsUpdate = true; }
+    if(envEl){ envEl.value = 'none'; envEl.onchange && envEl.onchange(); }
+  }
+  if(step === 3){
+    // Reset legs / stage controls
+    if(autorotate) autorotate.checked = false;
+    if(hasLegs) hasLegs.checked = false;
+    if(legStyleEl) legStyleEl.value = 'cyl';
+    if(legCountEl) { legCountEl.value = '4'; legCountEl.disabled = (shapeSel.value !== 'round'); }
+    if(legHeightEl) legHeightEl.value = '40';
+    if(legHeightPresetEl) legHeightPresetEl.value = 'standard';
+    if(legTaperEl) legTaperEl.value = '0.6';
+    if(legInsetEl) legInsetEl.value = '2';
+    if(leg3rotEl) leg3rotEl.value = '0';
+    if(legEasingEl) legEasingEl.value = 'easeInOutCubic';
+    // Rebuild scene to remove legs if present
+    try{ rebuild(false); }catch(e){ /* ignore */ }
+  }
+}
+
+backBtn.onclick = ()=>{ clearStepInputs(uiStep); showStep(uiStep-1); };
+nextBtn.onclick = ()=>{ showStep(uiStep+1); };
+const hasLegs = document.getElementById("hasLegs");
+const legStyleEl = document.getElementById("legStyle");
+const legCountEl = document.getElementById("legCount");
+const legHeightEl = document.getElementById("legHeight");
+const legHeightPresetEl = document.getElementById("legHeightPreset");
+const legTaperEl = document.getElementById("legTaper");
+const legInsetEl = document.getElementById("legInset");
+const leg3rotEl = document.getElementById("leg3rot");
+const legEasingEl = document.getElementById("legEasing");
+
+// Scene
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xffffff);
+
+const camera = new THREE.PerspectiveCamera(45,1,0.1,100);
+camera.position.set(1,0.7,1);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setClearColor(0xffffff, 1);
+stage.appendChild(renderer.domElement);
+
+// Controls
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+// Lights (keep subtle for “drafting” vibe)
+scene.add(new THREE.HemisphereLight(0xffffff,0xf2f4f8,0.9));
+const dir = new THREE.DirectionalLight(0xffffff,0.65);
+dir.position.set(2,3,2);
+scene.add(dir);
+
+// Optional faint grid for orientation (very light)
+const grid = new THREE.GridHelper(4, 20, 0xe9edf5, 0xf3f5fa);
+grid.position.y = -0.001;
+grid.visible = false;
+scene.add(grid);
+
+// Object group
+const group = new THREE.Group();
+scene.add(group);
+
+// Light neutral fill so outline is the star
+// Use MeshPhysicalMaterial for clearcoat/specular controls (better PBR)
+const fillMaterial = new THREE.MeshPhysicalMaterial({
+  color: 0xffffff,
+  roughness: 0.95,
+  metalness: 0.0,
+  clearcoat: 0.0,
+  clearcoatRoughness: 0.25
+});
+
+// Wood finish texture state
+let currentFinishTexture = null;
+let currentFinishCanvas = null;
+let currentNormalTexture = null;
+let currentRoughnessTexture = null;
+let currentEnv = null;
+let pmremGenerator = null;
+
+function makeWoodTexture(type){
+  // Canvas-based procedural wood grain for simple, small textures.
+  const size = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  // base colors for finishes
+  const bases = {
+    walnut: '#5b3a29',
+    hickory: '#b58a5c',
+    whiteoak: '#d6c5a5'
+  };
+  const base = bases[type] || '#ffffff';
+
+  // Fill background
+  ctx.fillStyle = base;
+  ctx.fillRect(0,0,size,size);
+
+  // Add grain: draw many slightly curved semi-transparent lines
+  ctx.lineWidth = 1.0;
+  for(let i=0;i<400;i++){
+    const y = Math.random() * size;
+    ctx.beginPath();
+    let x = 0;
+    ctx.moveTo(x, y);
+    const amp = 6 + Math.random()*18;
+    const freq = 0.002 + Math.random()*0.008;
+    while(x < size){
+      const nx = x + (4 + Math.random()*6);
+      const ny = y + Math.sin(x * freq) * amp * (0.5 + Math.random());
+      ctx.lineTo(nx, ny);
+      x = nx;
+    }
+    ctx.strokeStyle = 'rgba(0,0,0,' + (0.02 + Math.random()*0.06) + ')';
+    ctx.stroke();
+  }
+
+  // Subtle radial highlight/shadow for natural variation
+  const grad = ctx.createLinearGradient(0,0,size,size);
+  grad.addColorStop(0, 'rgba(255,255,255,0.02)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.03)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,size,size);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2,2);
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  tex.needsUpdate = true;
+  // expose canvas for normal/roughness generation
+  tex.userData = tex.userData || {};
+  tex.userData.sourceCanvas = canvas;
+  currentFinishCanvas = canvas;
+  return tex;
+}
+
+// Generate a normal map from a source canvas (simple central differences)
+function generateNormalMapFromCanvas(srcCanvas, strength=2){
+  const w = srcCanvas.width, h = srcCanvas.height;
+  const sctx = srcCanvas.getContext('2d');
+  const sdata = sctx.getImageData(0,0,w,h).data;
+
+  const out = document.createElement('canvas'); out.width = w; out.height = h;
+  const ctx = out.getContext('2d');
+  const id = ctx.createImageData(w,h);
+
+  const lum = (i)=> (0.299*sdata[i] + 0.587*sdata[i+1] + 0.114*sdata[i+2]);
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const i = (y*w+x)*4;
+      const l = lum(((Math.max(0,y-1))*w + x)*4);
+      const r = lum(((Math.min(h-1,y+1))*w + x)*4);
+      const u = lum((y*w + Math.max(0,x-1))*4);
+      const d = lum((y*w + Math.min(w-1,x+1))*4);
+
+      const dx = (r - l) / 255 * strength;
+      const dy = (d - u) / 255 * strength;
+      const nx = Math.round(((-dx)*0.5 + 0.5) * 255);
+      const ny = Math.round(((-dy)*0.5 + 0.5) * 255);
+      const nz = Math.round((1*0.5 + 0.5) * 255);
+      id.data[i] = nx; id.data[i+1] = ny; id.data[i+2] = nz; id.data[i+3] = 255;
+    }
+  }
+  ctx.putImageData(id,0,0);
+  const tex = new THREE.CanvasTexture(out);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.encoding = THREE.LinearEncoding;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function makeRoughnessFromCanvas(srcCanvas){
+  const size = 1024;
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,size,size);
+  // sample from source canvas luminance to create subtle variation
+  if(srcCanvas){
+    const sctx = srcCanvas.getContext('2d');
+    const sdata = sctx.getImageData(0,0,srcCanvas.width, srcCanvas.height).data;
+    for(let y=0;y<size;y++){
+      for(let x=0;x<size;x+=2){
+        const sx = Math.floor(x/size*srcCanvas.width);
+        const sy = Math.floor(y/size*srcCanvas.height);
+        const i = (sy*srcCanvas.width + sx)*4;
+        const l = (0.299*sdata[i] + 0.587*sdata[i+1] + 0.114*sdata[i+2]) / 255;
+        const v = 1 - (0.15 * l + (Math.random()*0.03));
+        ctx.fillStyle = `rgba(${Math.floor(255*v)},${Math.floor(255*v)},${Math.floor(255*v)},1)`;
+        ctx.fillRect(x, y, 2, 1);
+      }
+    }
+  } else {
+    for(let i=0;i<400;i++){
+      ctx.fillStyle = `rgba(0,0,0,${0.02 + Math.random()*0.05})`;
+      ctx.fillRect(0, Math.random()*size, size, 1 + Math.random()*3);
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.encoding = THREE.LinearEncoding;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function applyFinish(name){
+  // Dispose old texture
+  if(currentFinishTexture){
+    currentFinishTexture.dispose();
+    currentFinishTexture = null;
+  }
+
+  if(!name || name === 'none'){
+    fillMaterial.map = null;
+    // natural white top across default
+    fillMaterial.color.set(0xffffff);
+    fillMaterial.roughness = 0.95;
+    fillMaterial.metalness = 0.0;
+    fillMaterial.needsUpdate = true;
+    return;
+  }
+  const tex = makeWoodTexture(name);
+  currentFinishTexture = tex;
+  fillMaterial.map = tex;
+  // generate normal and roughness maps from the generated canvas
+  try{
+    if(currentNormalTexture){ currentNormalTexture.dispose(); currentNormalTexture = null; }
+    if(currentRoughnessTexture){ currentRoughnessTexture.dispose(); currentRoughnessTexture = null; }
+    const canvas = tex.userData?.sourceCanvas || currentFinishCanvas;
+    if(canvas){
+      currentNormalTexture = generateNormalMapFromCanvas(canvas, 2.0);
+      currentRoughnessTexture = makeRoughnessFromCanvas(canvas);
+      fillMaterial.normalMap = currentNormalTexture;
+      fillMaterial.roughnessMap = currentRoughnessTexture;
+      fillMaterial.normalScale.set(1,1);
+      fillMaterial.roughness = (name === 'walnut') ? 0.6 : (name === 'hickory' ? 0.55 : 0.65);
+      // roughness multiplier UI
+      const mul = Number(roughnessMulEl?.value || 1.0);
+      fillMaterial.roughness = fillMaterial.roughness * mul;
+    }
+  }catch(e){ console.warn('finish maps generation failed', e); }
+  // ensure the material uses the texture color and current clearcoat
+  fillMaterial.color.set(0xffffff);
+  fillMaterial.needsUpdate = true;
+}
+
+// Default leg params (inches)
+const DEFAULT_LEG_HEIGHT = 28;
+const LEG_INSET = 2; // inches inset from the outer edge
+const DEFAULT_LEG_COUNT = 4;
+const DEFAULT_LEG_TAPER = 0.6; // top radius = bottom * taper
+const DEFAULT_LEG_EASING = 'easeInOutCubic';
+const DEFAULT_LEG_INSET = 2; // inches
+const DEFAULT_LEG_3ROT = 0; // degrees
+
+// Architectural “blueprint” dashed outline
+const OUTLINE_BLUE = 0x1a73e8;
+const dashedMaterial = new THREE.LineDashedMaterial({
+  color: OUTLINE_BLUE,
+  linewidth: 1,
+  dashSize: 0.05,
+  gapSize: 0.03,
+});
+
+// ===== Morphable profile: superellipse =====
+// This lets us smoothly morph between rectangle/square/oval/round while keeping the exact
+// Extrude+Bevel and EdgesGeometry look from your original file.
+function superellipsePoints(rx, rz, exp, segments){
+  // rx, rz are half-dimensions in scene units
+  // exp: 2 = ellipse, higher -> squarer corners
+  const pts = [];
+  const e = Math.max(2.0001, exp); // keep stable
+  for(let i=0;i<segments;i++){
+    const t = (i/segments) * Math.PI * 2;
+    const ct = Math.cos(t);
+    const st = Math.sin(t);
+
+    // superellipse: x = rx * sign(cos)*|cos|^(2/e)
+    const x = rx * Math.sign(ct) * Math.pow(Math.abs(ct), 2/e);
+    const z = rz * Math.sign(st) * Math.pow(Math.abs(st), 2/e);
+    pts.push(new THREE.Vector2(x, z));
+  }
+  return pts;
+}
+
+function buildSuperellipseTop(rxIn, rzIn, exp){
+  const rx = rxIn * SCALE;
+  const rz = rzIn * SCALE;
+  const t = THICKNESS * SCALE;
+
+  const pts = superellipsePoints(rx, rz, exp, 160);
+  const shape = new THREE.Shape(pts);
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: t,
+    bevelEnabled: false,
+    // bevelThickness: t * 0.15,
+    // bevelSize: Math.min(rx*2, rz*2) * 0.012,
+    // bevelSegments: 2,
+    // curveSegments: 32,
+    // steps: 1
+    bevelThickness: 0,
+    bevelSize: 0,
+    bevelSegments: 0,
+    curveSegments: 0,
+    steps: 1
+    
+  });
+
+  geo.rotateX(Math.PI/2);
+  geo.translate(0, t/2, 0);
+  return geo;
+}
+
+function makeDashedEdges(mesh){
+  const edgesGeo = new THREE.EdgesGeometry(mesh.geometry);
+  const lines = new THREE.LineSegments(edgesGeo, dashedMaterial);
+  lines.computeLineDistances();
+  lines.position.copy(mesh.position);
+  lines.rotation.copy(mesh.rotation);
+  console.log(lines);
+  return lines;
+}
+
+function populate(){
+  presetSel.innerHTML="";
+  PRESETS[shapeSel.value].forEach((p,i)=>{
+    const o=document.createElement("option");
+    o.value=i;
+    o.textContent=p.label;
+    presetSel.appendChild(o);
+  });
+  presetSel.value = "0";
+
+  // Enforce leg-count rules based on selected shape:
+  // - rectangle, square, oval => always 4 legs (disable count selector)
+  // - round => allow selecting 1/2/3/4 (enable count selector)
+  if(legCountEl){
+    if(shapeSel.value === 'round'){
+      legCountEl.disabled = false;
+    } else {
+      legCountEl.value = '4';
+      legCountEl.disabled = true;
+    }
+    if(leg3rotEl) leg3rotEl.disabled = !(shapeSel.value === 'round' && legCountEl.value === '3');
+  }
+}
+
+function selectionToParams(shape, preset){
+  // Return "half sizes in inches" + exponent
+  // exp controls corner squareness:
+  // 2 = ellipse/circle, 8-12 = squarish/rect with nicer corners.
+  if(shape === "round"){
+    const r = preset.dia/2;
+    return { rx: r, rz: r, exp: 2.0 };
+  }
+  if(shape === "oval"){
+    return { rx: preset.w/2, rz: preset.d/2, exp: 2.0 };
+  }
+  // rectangle / square
+  // Use exp ~ 10 to look boxy like BoxGeometry but still morphable & bevelable.
+  return { rx: preset.w/2, rz: preset.d/2, exp: 100.0 };
+}
+
+function selectionToLegParams(){
+  const enabled = !!hasLegs?.checked;
+  const height = Number(legHeightEl?.value || DEFAULT_LEG_HEIGHT);
+  const style = legStyleEl?.value || 'cyl';
+  const styleMix = (style === 'cyl') ? 1.0 : (style === 'box' ? 0.0 : 1.0);
+  // If the selected shape is not round, force 4 legs
+  const rawCount = Number(legCountEl?.value || DEFAULT_LEG_COUNT);
+  const count = (shapeSel.value === 'round') ? rawCount : 4;
+  const taper = Number(legTaperEl?.value || DEFAULT_LEG_TAPER);
+  const inset = Number(legInsetEl?.value || DEFAULT_LEG_INSET);
+  const rot3 = Number(leg3rotEl?.value || DEFAULT_LEG_3ROT);
+  const easing = legEasingEl?.value || DEFAULT_LEG_EASING;
+  return { enabled, height, styleMix, count, taper, inset, rot3, easing, style };
+}
+
+// Current objects
+let mesh = null;
+let outline = null;
+let legGroup = null; // group for legs + outlines
+
+// Morph state
+let morph = null;
+let current = null; // {rx,rz,exp}
+let currentLeg = null; // {enabled, height, styleMix}
+
+function disposeGroup(){
+  group.traverse(obj => { obj.geometry?.dispose?.(); });
+  group.clear();
+  mesh = null;
+  outline = null;
+  legGroup = null;
+}
+
+function clearLegs(){
+  if(!legGroup) return;
+  legGroup.traverse(obj => { obj.geometry?.dispose?.(); });
+  legGroup.clear();
+  group.remove(legGroup);
+  legGroup = null;
+}
+
+// Compute 4 leg positions (scene units) based on the superellipse profile so
+// legs remain attached to the tabletop as it morphs.
+function computeLegPositions(rxIn, rzIn, exp, insetInches, count=4, preferCorners=false, rotOffsetDeg=0){
+  const rx = rxIn * SCALE;
+  const rz = rzIn * SCALE;
+  const inset = insetInches * SCALE;
+
+  // Sample the profile points (x,z) around the shape
+  const pts = superellipsePoints(rx, rz, exp, 720);
+
+  // Special case: pedestal / single leg at center
+  if(count <= 1){
+    return [{ x: 0, z: 0 }];
+  }
+
+  // If we prefer corners and there are 4 legs, pick the quadrant maxima so legs sit near corners
+  if(preferCorners && count === 4){
+    const quads = [ {sx:1, sz:1}, {sx:-1, sz:1}, {sx:-1, sz:-1}, {sx:1, sz:-1} ];
+    const positions = [];
+    for(const q of quads){
+      let best = null;
+      let bestScore = -Infinity;
+      for(const p of pts){
+        const score = p.x * q.sx + p.y * q.sz;
+        if(score > bestScore){ bestScore = score; best = p; }
+      }
+      const dir = best.clone().normalize();
+      const pos = best.clone().sub(dir.multiplyScalar(inset));
+      positions.push({ x: pos.x, z: pos.y });
+    }
+    return positions;
+  }
+
+  // General case: For N legs, pick N directions evenly spaced and find the best point along that direction
+  const positions = [];
+  for(let i=0;i<count;i++){
+    const ang = (i / count) * Math.PI * 2 + (rotOffsetDeg * Math.PI / 180);
+    const dir = new THREE.Vector2(Math.cos(ang), Math.sin(ang));
+    let best = null;
+    let bestScore = -Infinity;
+    for(const p of pts){
+      const score = p.x * dir.x + p.y * dir.y;
+      if(score > bestScore){ bestScore = score; best = p; }
+    }
+    // move inward by `inset`
+    const inward = best.clone().normalize().multiplyScalar(inset);
+    const pos = best.clone().sub(inward);
+    positions.push({ x: pos.x, z: pos.y });
+  }
+
+  return positions;
+}
+
+function makeLegMesh(x, z, heightIn, style, topY){
+  const h = heightIn * SCALE;
+  const radius = 0.75 * SCALE; // ~3/4 inch default radius
+  let geo;
+  if(style === 'box'){
+    const w = radius * 1.8;
+    geo = new THREE.BoxGeometry(w, h, w);
+    const m = new THREE.Mesh(geo, fillMaterial);
+    // Place so the top of the leg is exactly at topY
+    m.position.set(x, topY - h/2, z);
+    return m;
+  }
+  // cylinder: top radius, bottom radius, height, radial segments
+  geo = new THREE.CylinderGeometry(radius, radius, h, 16);
+  const m = new THREE.Mesh(geo, fillMaterial);
+  m.position.set(x, topY - h/2, z);
+  return m;
+}
+
+// Create a leg mesh whose cross-section is a superellipse controlled by styleMix
+// styleMix: 0 => boxy (large exponent), 1 => circular (exp=2)
+function makeLegMeshMorph(x, z, heightIn, styleMix, topY, taper=DEFAULT_LEG_TAPER, styleName='cyl'){
+  const h = heightIn * SCALE;
+  const baseRadius = 0.75 * SCALE; // bottom radius
+
+  // Compute top radius by taper (0.2..1.0)
+  const topRadius = baseRadius * taper;
+
+  // Determine radial segments to smoothly interpolate between box (4) and cylinder (32)
+  const radialSegments = Math.max(4, Math.round(4 + (28 * styleMix)));
+
+  // If styleName is 'turned', create a lathe profile (simple turned-leg silhouette)
+  if(styleName === 'turned'){
+    const points = [];
+    // build profile from top (y=0) to bottom (y=h)
+    // top small, bulge in middle, thicker at bottom
+    points.push(new THREE.Vector2(topRadius * 0.6, 0));
+    points.push(new THREE.Vector2(Math.max(topRadius, baseRadius * 0.9), h * 0.15));
+    points.push(new THREE.Vector2(baseRadius * 1.35, h * 0.45));
+    points.push(new THREE.Vector2(baseRadius * 1.05, h * 0.75));
+    points.push(new THREE.Vector2(baseRadius, h));
+    const geo = new THREE.LatheGeometry(points, 32);
+    // LatheGeometry built from points [0..h]; center it so it matches CylinderGeometry
+    // which spans [-h/2..h/2]. Translate by -h/2 to center vertically.
+    geo.translate(0, -h/2, 0);
+    const m = new THREE.Mesh(geo, fillMaterial);
+    m.position.set(x, topY - h/2, z);
+    return m;
+  }
+
+  // Default: tapered cylinder with variable radial resolution to approximate boxiness
+  const geo = new THREE.CylinderGeometry(topRadius, baseRadius, h, radialSegments);
+  // CylinderGeometry is centered; position so top meets topY
+  const m = new THREE.Mesh(geo, fillMaterial);
+  m.position.set(x, topY - h/2, z);
+  return m;
+}
+
+function buildLegs(params, legOpts){
+  // remove previous
+  clearLegs();
+  if(!legOpts || !legOpts.enabled) return;
+
+  legGroup = new THREE.Group();
+
+  // For now, implement 4 legs placed near corners with a small inset
+  const inset = LEG_INSET * SCALE;
+  const preferCorners = (shapeSel.value !== 'round');
+  const rotOffset = (legOpts.count === 3) ? (legOpts.rot3 || DEFAULT_LEG_3ROT) : 0;
+  const positions = computeLegPositions(params.rx, params.rz, params.exp, legOpts.inset || LEG_INSET, legOpts.count || DEFAULT_LEG_COUNT, preferCorners, rotOffset);
+
+  // Determine tabletop underside (top of legs should meet this Y)
+  let topY = 0 - (THICKNESS * SCALE) / 2; // fallback
+  try{
+    const meshBox = new THREE.Box3().setFromObject(mesh);
+    topY = meshBox.min.y;
+  }catch(e){ /* keep fallback */ }
+
+  for(const pos of positions){
+    const styleMix = (typeof legOpts.styleMix === 'number') ? legOpts.styleMix : (legOpts.style === 'cyl' ? 1.0 : 0.0);
+    const taper = (typeof legOpts.taper === 'number') ? legOpts.taper : DEFAULT_LEG_TAPER;
+    const styleName = legOpts.style || (styleMix === 1.0 ? 'cyl' : 'box');
+    const leg = makeLegMeshMorph(pos.x, pos.z, legOpts.height, styleMix, topY, taper, styleName);
+    // Don't add dashed outlines for legs to keep them visually clean
+    legGroup.add(leg);
+  }
+
+  group.add(legGroup);
+}
+
+function buildAt(params){
+  disposeGroup();
+  const geo = buildSuperellipseTop(params.rx, params.rz, params.exp);
+  mesh = new THREE.Mesh(geo, fillMaterial);
+  mesh.position.y = (THICKNESS*SCALE)/2;
+  group.add(mesh);
+
+  outline = makeDashedEdges(mesh);
+ // group.add(outline);
+
+  // Build legs (if enabled)
+  const legOpts = selectionToLegParams();
+  buildLegs(params, legOpts);
+}
+
+function startMorphTo(next){
+  morph = {
+    from: { ...current },
+    to: { ...next },
+    start: performance.now(),
+    dur: MORPH_MS,
+    camFromPos: camera.position.clone(),
+    camFromTarget: controls.target.clone(),
+    camToPos: null,
+    camToTarget: null
+  };
+
+  // Record leg morph targets
+  morph.legs = {
+    from: { ...(currentLeg || selectionToLegParams()) },
+    to:   { ...selectionToLegParams() }
+  };
+
+  // Precompute where camera should end up based on final geometry bounds
+  // Keep camera fixed during morphs (do not auto-fit to new geometry)
+  morph.camToPos = camera.position.clone();
+  morph.camToTarget = controls.target.clone();
+}
+
+function easeInOutCubic(t){
+  return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3)/2;
+}
+
+function applyMorph(){
+  if(!morph) return;
+
+  const now = performance.now();
+  const t = Math.min(1, (now - morph.start) / morph.dur);
+  const e = easeInOutCubic(t);
+
+  const p = {
+    rx: morph.from.rx + (morph.to.rx - morph.from.rx) * e,
+    rz: morph.from.rz + (morph.to.rz - morph.from.rz) * e,
+    exp: morph.from.exp + (morph.to.exp - morph.from.exp) * e
+  };
+
+  // Rebuild geometry each frame to keep bevel + outline EXACTLY like original.
+  // These are small meshes, so it's still smooth on modern machines.
+  const oldGeo = mesh.geometry;
+  mesh.geometry = buildSuperellipseTop(p.rx, p.rz, p.exp);
+  oldGeo.dispose();
+
+  // Rebuild edges too (EdgesGeometry depends on mesh triangles)
+  const oldEdgesGeo = outline.geometry;
+  outline.geometry = new THREE.EdgesGeometry(mesh.geometry);
+  oldEdgesGeo.dispose();
+  outline.computeLineDistances();
+
+  // Rebuild legs to match interpolated params
+  // Interpolate leg params from morph.legs so legs smoothly transition
+  let legOpts = { enabled: false, height: DEFAULT_LEG_HEIGHT, styleMix: 1.0 };
+  if(morph?.legs){
+    const lf = morph.legs.from;
+    const lt = morph.legs.to;
+    // enabled is discrete: switch at halfway
+    const enabled = (lf.enabled === lt.enabled) ? lf.enabled : (t > 0.5 ? lt.enabled : lf.enabled);
+    // use separate easing for leg parameters
+    const easeName = lt.easing || DEFAULT_LEG_EASING;
+    const eLeg = (function getLegEased(tt){
+      if(easeName === 'linear') return tt;
+      if(easeName === 'easeOutBack'){
+        const c1 = 1.70158; const c3 = c1 + 1;
+        return 1 + c3*Math.pow(tt-1,3) + c1*Math.pow(tt-1,2);
+      }
+      // default
+      return tt < 0.5 ? 4*tt*tt*tt : 1 - Math.pow(-2*tt + 2, 3)/2;
+    })(t);
+
+    const height = lf.height + (lt.height - lf.height) * eLeg;
+    const styleMix = lf.styleMix + (lt.styleMix - lf.styleMix) * eLeg;
+    const taper = (typeof lf.taper === 'number' && typeof lt.taper === 'number') ? (lf.taper + (lt.taper - lf.taper) * eLeg) : (lt.taper || DEFAULT_LEG_TAPER);
+    const count = (lf.count === lt.count) ? lf.count : (t > 0.5 ? lt.count : lf.count);
+    const inset = (typeof lf.inset === 'number' && typeof lt.inset === 'number') ? (lf.inset + (lt.inset - lf.inset) * eLeg) : (lt.inset || DEFAULT_LEG_INSET);
+    const rot3 = (typeof lf.rot3 === 'number' && typeof lt.rot3 === 'number') ? (lf.rot3 + (lt.rot3 - lf.rot3) * eLeg) : (lt.rot3 || DEFAULT_LEG_3ROT);
+    legOpts = { enabled, height, styleMix, taper, count, inset, rot3 };
+  } else {
+    legOpts = selectionToLegParams();
+  }
+  buildLegs(p, legOpts);
+
+  // Smooth camera
+  camera.position.lerpVectors(morph.camFromPos, morph.camToPos, e);
+  controls.target.lerpVectors(morph.camFromTarget, morph.camToTarget, e);
+
+  if(t >= 1){
+    current = morph.to;
+    // finalize leg state
+    currentLeg = morph.legs?.to || selectionToLegParams();
+    morph = null;
+    // Do not refit camera automatically after morph so user's view stays fixed
+  }
+}
+
+function rebuild(morphOnChange=true){
+  const shape = shapeSel.value;
+  const preset = PRESETS[shape][Number(presetSel.value)];
+  const next = selectionToParams(shape, preset);
+
+  badge.textContent = `${shape.toUpperCase()} — ${preset.label}" (thk ${THICKNESS}")`;
+
+  if(!current){
+    current = next;
+    currentLeg = selectionToLegParams();
+    buildAt(current);
+    return;
+  }
+
+  if(!morphOnChange){
+    current = next;
+    currentLeg = selectionToLegParams();
+    buildAt(current);
+    return;
+  }
+
+  startMorphTo(next);
+}
+
+function fitCamera(){
+  const box = new THREE.Box3().setFromObject(group);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const fov = camera.fov * (Math.PI/180);
+  let camZ = Math.abs((maxDim/2) / Math.tan(fov/2));
+  camZ *= 1.35;
+
+  camera.position.set(camZ*0.9, camZ*0.65, camZ*0.9);
+  controls.target.copy(center);
+  controls.update();
+}
+
+function resize(){
+  const r = stage.getBoundingClientRect();
+  camera.aspect = r.width/r.height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(r.width,r.height,false);
+}
+
+shapeSel.onchange=()=>{populate();rebuild(true);};
+presetSel.onchange=()=>rebuild(true);
+window.onresize=resize;
+
+if(hasLegs){
+  hasLegs.onchange = () => rebuild(false);
+}
+if(legStyleEl){
+  legStyleEl.onchange = () => rebuild(false);
+}
+if(legHeightEl){
+  legHeightEl.onchange = () => rebuild(false);
+}
+if(legHeightPresetEl){
+  legHeightPresetEl.onchange = () => {
+    const v = legHeightPresetEl.value;
+    if(v === 'short') legHeightEl.value = '38';
+    else if(v === 'standard') legHeightEl.value = '40';
+    else if(v === 'tall') legHeightEl.value = '42';
+    // if manual, do not change
+    rebuild(false);
+  };
+}
+if(legCountEl){
+    legCountEl.onchange = () => { 
+      // when count changes, enable/disable 3-leg rotation control
+      if(leg3rotEl) leg3rotEl.disabled = !(shapeSel.value === 'round' && legCountEl.value === '3');
+      rebuild(false);
+    };
+}
+if(legTaperEl){
+  legTaperEl.oninput = () => rebuild(false);
+}
+  if(legInsetEl){
+    legInsetEl.oninput = () => rebuild(false);
+  }
+  if(leg3rotEl){
+    leg3rotEl.oninput = () => rebuild(false);
+  }
+if(legEasingEl){
+  legEasingEl.onchange = () => rebuild(false);
+}
+if(finishEl){
+  finishEl.onchange = () => applyFinish(finishEl.value);
+}
+if(clearcoatEl){
+  clearcoatEl.oninput = () => { fillMaterial.clearcoat = Number(clearcoatEl.value); fillMaterial.needsUpdate = true; };
+}
+if(roughnessMulEl){
+  roughnessMulEl.oninput = () => {
+    // reapply roughness map multiply
+    const mul = Number(roughnessMulEl.value);
+    if(currentRoughnessTexture){
+      fillMaterial.roughness = 0.6 * mul;
+    }
+    fillMaterial.needsUpdate = true;
+  };
+}
+if(envEl){
+  envEl.onchange = () => {
+    const v = envEl.value;
+    if(v === 'none'){
+      scene.environment = null;
+      if(currentEnv){ currentEnv.dispose(); currentEnv = null; }
+      return;
+    }
+    // load a small studio HDRI from polyhaven
+    const url = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_05_1k.hdr';
+    if(!pmremGenerator) pmremGenerator = new THREE.PMREMGenerator(renderer);
+    new RGBELoader().load(url, (tex)=>{
+      const envMap = pmremGenerator.fromEquirectangular(tex).texture;
+      scene.environment = envMap;
+      if(currentEnv) currentEnv.dispose();
+      currentEnv = envMap;
+      tex.dispose();
+      pmremGenerator.dispose(); pmremGenerator = null;
+    });
+  };
+}
+
+populate();
+rebuild(false);
+resize();
+// initialize default finish
+applyFinish('none');
+// show initial step
+showStep(1);
+
+function animate(){
+  requestAnimationFrame(animate);
+  if(autorotate.checked) group.rotation.y += 0.01;
+  applyMorph();
+  controls.update();
+  renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+</html>

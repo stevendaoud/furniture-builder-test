@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Furniture Builder (Tabletop + Morph)</title>
+
+  <!-- Import map fixes bare specifiers like "three" -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <style>
+    :root{
+      --bg:#ffffff;
+      --panel:#ffffff;
+      --text:#0b1220;
+      --muted:#4a5568;
+      --line:#d7dde7;
+    }
+    html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    .wrap{display:grid;grid-template-columns:320px 1fr;height:100%;gap:16px;padding:16px;box-sizing:border-box;background:var(--bg)}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+    h3{margin:0 0 10px 0;font-size:16px}
+    label{display:block;margin-top:10px;font-size:12px;color:var(--muted)}
+    select{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--text);outline:none}
+    .row{display:flex;align-items:center;gap:10px;margin-top:12px}
+    .row label{margin:0;font-size:14px;color:var(--text)}
+    .stage{background:#ffffff;border:1px solid var(--line);border-radius:12px;position:relative;overflow:hidden}
+    canvas{display:block;width:100%;height:100%}
+    .badge{position:absolute;left:12px;bottom:12px;font-size:12px;color:var(--muted);background:rgba(255,255,255,0.8);border:1px solid var(--line);padding:6px 8px;border-radius:10px;backdrop-filter: blur(4px)}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <h3>Furniture Builder</h3>
+    <label for="shape">Shape</label>
+    <select id="shape">
+      <option value="rectangle">Rectangle</option>
+      <option value="square">Square</option>
+      <option value="round">Round</option>
+      <option value="oval">Oval</option>
+    </select>
+
+    <label for="preset">Preset</label>
+    <select id="preset"></select>
+
+    <div class="row">
+      <input type="checkbox" id="autorotate" />
+      <label for="autorotate">Auto rotate</label>
+    </div>
+
+    <div style="margin-top:10px;font-size:12px;color:var(--muted);line-height:1.35">
+      Drag to rotate • Scroll to zoom • Right-drag to pan<br/>
+      Outline is the same dashed “architectural blue” edge outline — now with smooth morphs.
+    </div>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="badge" id="badge"></div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const SCALE = 0.02;     // inches -> scene units
+const THICKNESS = 1.5;  // inches
+const MORPH_MS = 520;
+
+// Placeholder presets (inches)
+const PRESETS = {
+  rectangle:[{label:'60 × 30',w:60,d:30},{label:'72 × 36',w:72,d:36},{label:'84 × 40',w:84,d:40}],
+  square:[{label:'36 × 36',w:36,d:36},{label:'42 × 42',w:42,d:42},{label:'48 × 48',w:48,d:48}],
+  round:[{label:'Ø 36',dia:36},{label:'Ø 42',dia:42},{label:'Ø 48',dia:48}],
+  oval:[{label:'72 × 42',w:72,d:42},{label:'84 × 46',w:84,d:46},{label:'96 × 52',w:96,d:52}]
+};
+
+const stage = document.getElementById("stage");
+const shapeSel = document.getElementById("shape");
+const presetSel = document.getElementById("preset");
+const autorotate = document.getElementById("autorotate");
+const badge = document.getElementById("badge");
+
+// Scene
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xffffff);
+
+const camera = new THREE.PerspectiveCamera(45,1,0.1,100);
+camera.position.set(1,0.7,1);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setClearColor(0xffffff, 1);
+stage.appendChild(renderer.domElement);
+
+// Controls
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+// Lights (keep subtle for “drafting” vibe)
+scene.add(new THREE.HemisphereLight(0xffffff,0xf2f4f8,0.9));
+const dir = new THREE.DirectionalLight(0xffffff,0.65);
+dir.position.set(2,3,2);
+scene.add(dir);
+
+// Optional faint grid for orientation (very light)
+const grid = new THREE.GridHelper(4, 20, 0xe9edf5, 0xf3f5fa);
+grid.position.y = -0.001;
+grid.visible = false;
+scene.add(grid);
+
+// Object group
+const group = new THREE.Group();
+scene.add(group);
+
+// Light neutral fill so outline is the star
+const fillMaterial = new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  roughness: 0.95,
+  metalness: 0.0
+});
+
+// Architectural “blueprint” dashed outline
+const OUTLINE_BLUE = 0x1a73e8;
+const dashedMaterial = new THREE.LineDashedMaterial({
+  color: OUTLINE_BLUE,
+  linewidth: 1,
+  dashSize: 0.05,
+  gapSize: 0.03,
+});
+
+// ===== Morphable profile: superellipse =====
+// This lets us smoothly morph between rectangle/square/oval/round while keeping the exact
+// Extrude+Bevel and EdgesGeometry look from your original file.
+function superellipsePoints(rx, rz, exp, segments){
+  // rx, rz are half-dimensions in scene units
+  // exp: 2 = ellipse, higher -> squarer corners
+  const pts = [];
+  const e = Math.max(2.0001, exp); // keep stable
+  for(let i=0;i<segments;i++){
+    const t = (i/segments) * Math.PI * 2;
+    const ct = Math.cos(t);
+    const st = Math.sin(t);
+
+    // superellipse: x = rx * sign(cos)*|cos|^(2/e)
+    const x = rx * Math.sign(ct) * Math.pow(Math.abs(ct), 2/e);
+    const z = rz * Math.sign(st) * Math.pow(Math.abs(st), 2/e);
+    pts.push(new THREE.Vector2(x, z));
+  }
+  return pts;
+}
+
+function buildSuperellipseTop(rxIn, rzIn, exp){
+  const rx = rxIn * SCALE;
+  const rz = rzIn * SCALE;
+  const t = THICKNESS * SCALE;
+
+  const pts = superellipsePoints(rx, rz, exp, 160);
+  const shape = new THREE.Shape(pts);
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: t,
+    bevelEnabled: false,
+    // bevelThickness: t * 0.15,
+    // bevelSize: Math.min(rx*2, rz*2) * 0.012,
+    // bevelSegments: 2,
+    // curveSegments: 32,
+    // steps: 1
+    bevelThickness: 0,
+    bevelSize: 0,
+    bevelSegments: 0,
+    curveSegments: 0,
+    steps: 1
+    
+  });
+
+  geo.rotateX(Math.PI/2);
+  geo.translate(0, t/2, 0);
+  return geo;
+}
+
+function makeDashedEdges(mesh){
+  const edgesGeo = new THREE.EdgesGeometry(mesh.geometry);
+  const lines = new THREE.LineSegments(edgesGeo, dashedMaterial);
+  lines.computeLineDistances();
+  lines.position.copy(mesh.position);
+  lines.rotation.copy(mesh.rotation);
+  console.log(lines);
+  return lines;
+}
+
+function populate(){
+  presetSel.innerHTML="";
+  PRESETS[shapeSel.value].forEach((p,i)=>{
+    const o=document.createElement("option");
+    o.value=i;
+    o.textContent=p.label;
+    presetSel.appendChild(o);
+  });
+  presetSel.value = "0";
+}
+
+function selectionToParams(shape, preset){
+  // Return "half sizes in inches" + exponent
+  // exp controls corner squareness:
+  // 2 = ellipse/circle, 8-12 = squarish/rect with nicer corners.
+  if(shape === "round"){
+    const r = preset.dia/2;
+    return { rx: r, rz: r, exp: 2.0 };
+  }
+  if(shape === "oval"){
+    return { rx: preset.w/2, rz: preset.d/2, exp: 2.0 };
+  }
+  // rectangle / square
+  // Use exp ~ 10 to look boxy like BoxGeometry but still morphable & bevelable.
+  return { rx: preset.w/2, rz: preset.d/2, exp: 100.0 };
+}
+
+// Current objects
+let mesh = null;
+let outline = null;
+
+// Morph state
+let morph = null;
+let current = null; // {rx,rz,exp}
+
+function disposeGroup(){
+  group.traverse(obj => { obj.geometry?.dispose?.(); });
+  group.clear();
+  mesh = null;
+  outline = null;
+}
+
+function buildAt(params){
+  disposeGroup();
+  const geo = buildSuperellipseTop(params.rx, params.rz, params.exp);
+  mesh = new THREE.Mesh(geo, fillMaterial);
+  mesh.position.y = (THICKNESS*SCALE)/2;
+  group.add(mesh);
+
+  outline = makeDashedEdges(mesh);
+ // group.add(outline);
+}
+
+function startMorphTo(next){
+  morph = {
+    from: { ...current },
+    to: { ...next },
+    start: performance.now(),
+    dur: MORPH_MS,
+    camFromPos: camera.position.clone(),
+    camFromTarget: controls.target.clone(),
+    camToPos: null,
+    camToTarget: null
+  };
+
+  // Precompute where camera should end up based on final geometry bounds
+  // (we compute using a temporary geometry built at "to" params).
+  const tempGeo = buildSuperellipseTop(next.rx, next.rz, next.exp);
+  const tempMesh = new THREE.Mesh(tempGeo, fillMaterial);
+  tempMesh.position.y = (THICKNESS*SCALE)/2;
+
+  const tempGroup = new THREE.Group();
+  tempGroup.add(tempMesh);
+  const box = new THREE.Box3().setFromObject(tempGroup);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const fov = camera.fov * (Math.PI/180);
+  let camZ = Math.abs((maxDim/2) / Math.tan(fov/2));
+  camZ *= 1.35;
+
+  morph.camToPos = new THREE.Vector3(camZ*0.9, camZ*0.65, camZ*0.9);
+  morph.camToTarget = center.clone();
+
+  tempGeo.dispose();
+}
+
+function easeInOutCubic(t){
+  return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3)/2;
+}
+
+function applyMorph(){
+  if(!morph) return;
+
+  const now = performance.now();
+  const t = Math.min(1, (now - morph.start) / morph.dur);
+  const e = easeInOutCubic(t);
+
+  const p = {
+    rx: morph.from.rx + (morph.to.rx - morph.from.rx) * e,
+    rz: morph.from.rz + (morph.to.rz - morph.from.rz) * e,
+    exp: morph.from.exp + (morph.to.exp - morph.from.exp) * e
+  };
+
+  // Rebuild geometry each frame to keep bevel + outline EXACTLY like original.
+  // These are small meshes, so it's still smooth on modern machines.
+  const oldGeo = mesh.geometry;
+  mesh.geometry = buildSuperellipseTop(p.rx, p.rz, p.exp);
+  oldGeo.dispose();
+
+  // Rebuild edges too (EdgesGeometry depends on mesh triangles)
+  const oldEdgesGeo = outline.geometry;
+  outline.geometry = new THREE.EdgesGeometry(mesh.geometry);
+  oldEdgesGeo.dispose();
+  outline.computeLineDistances();
+
+  // Smooth camera
+  camera.position.lerpVectors(morph.camFromPos, morph.camToPos, e);
+  controls.target.lerpVectors(morph.camFromTarget, morph.camToTarget, e);
+
+  if(t >= 1){
+    current = morph.to;
+    morph = null;
+    // After finishing, refit precisely once (keeps it crisp)
+    fitCamera();
+  }
+}
+
+function rebuild(morphOnChange=true){
+  const shape = shapeSel.value;
+  const preset = PRESETS[shape][Number(presetSel.value)];
+  const next = selectionToParams(shape, preset);
+
+  badge.textContent = `${shape.toUpperCase()} — ${preset.label}" (thk ${THICKNESS}")`;
+
+  if(!current){
+    current = next;
+    buildAt(current);
+    fitCamera();
+    return;
+  }
+
+  if(!morphOnChange){
+    current = next;
+    buildAt(current);
+    fitCamera();
+    return;
+  }
+
+  startMorphTo(next);
+}
+
+function fitCamera(){
+  const box = new THREE.Box3().setFromObject(group);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const fov = camera.fov * (Math.PI/180);
+  let camZ = Math.abs((maxDim/2) / Math.tan(fov/2));
+  camZ *= 1.35;
+
+  camera.position.set(camZ*0.9, camZ*0.65, camZ*0.9);
+  controls.target.copy(center);
+  controls.update();
+}
+
+function resize(){
+  const r = stage.getBoundingClientRect();
+  camera.aspect = r.width/r.height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(r.width,r.height,false);
+}
+
+shapeSel.onchange=()=>{populate();rebuild(true);};
+presetSel.onchange=()=>rebuild(true);
+window.onresize=resize;
+
+populate();
+rebuild(false);
+resize();
+
+function animate(){
+  requestAnimationFrame(animate);
+  if(autorotate.checked) group.rotation.y += 0.01;
+  applyMorph();
+  controls.update();
+  renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+</html>
