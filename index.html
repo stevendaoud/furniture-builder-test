@@ -45,6 +45,7 @@
     <select id="shape">
       <option value="rectangle">Rectangle</option>
       <option value="square">Square</option>
+      <option value="hexagon">Hexagon</option>
       <option value="round">Round</option>
       <option value="oval">Oval</option>
     </select>
@@ -168,6 +169,7 @@ const PRESETS = {
   rectangle:[{label:'60 × 30',w:60,d:30},{label:'72 × 36',w:72,d:36},{label:'84 × 40',w:84,d:40}],
   square:[{label:'36 × 36',w:36,d:36},{label:'42 × 42',w:42,d:42},{label:'48 × 48',w:48,d:48}],
   round:[{label:'Ø 36',dia:36},{label:'Ø 42',dia:42},{label:'Ø 48',dia:48}],
+  hexagon:[{label:'Ø 36',dia:36},{label:'Ø 42',dia:42},{label:'Ø 48',dia:48}],
   oval:[{label:'72 × 42',w:72,d:42},{label:'84 × 46',w:84,d:46},{label:'96 × 52',w:96,d:52}]
 };
 
@@ -489,6 +491,81 @@ function superellipsePoints(rx, rz, exp, segments){
   return pts;
 }
 
+// Regular polygon points (sample edges so legs and outlines can use perimeter sampling)
+function polygonPoints(rx, rz, sides, segments){
+  const pts = [];
+  const verts = [];
+  for(let i=0;i<sides;i++){
+    const a = (i / sides) * Math.PI * 2;
+    verts.push(new THREE.Vector2(rx * Math.cos(a), rz * Math.sin(a)));
+  }
+  // sample edges
+  const perEdge = Math.max(2, Math.round(segments / sides));
+  for(let i=0;i<sides;i++){
+    const v1 = verts[i];
+    const v2 = verts[(i+1)%sides];
+    for(let j=0;j<perEdge;j++){
+      const t = j / perEdge;
+      const x = v1.x * (1-t) + v2.x * t;
+      const y = v1.y * (1-t) + v2.y * t;
+      pts.push(new THREE.Vector2(x, y));
+    }
+  }
+  return pts;
+}
+
+function buildPolygonTop(rxIn, rzIn, sides){
+  const rx = rxIn * SCALE;
+  const rz = rzIn * SCALE;
+  const t = THICKNESS * SCALE;
+  const pts = polygonPoints(rx, rz, sides, sides * 24);
+  const shape = new THREE.Shape(pts);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: t,
+    bevelEnabled: false,
+    bevelThickness: 0,
+    bevelSize: 0,
+    bevelSegments: 0,
+    curveSegments: 0,
+    steps: 1
+  });
+  geo.rotateX(Math.PI/2);
+  geo.translate(0, t/2, 0);
+  return geo;
+}
+
+// Build a blended top that interpolates between a superellipse and a regular polygon.
+function buildBlendedTop(rxIn, rzIn, exp, sides, blend, segments=160){
+  const rx = rxIn * SCALE;
+  const rz = rzIn * SCALE;
+  const t = THICKNESS * SCALE;
+
+  const superPts = superellipsePoints(rx, rz, exp, segments);
+  const polyPts = polygonPoints(rx, rz, sides, segments);
+  const pts = [];
+  for(let i=0;i<segments;i++){
+    const sp = superPts[i];
+    const pp = polyPts[i];
+    const x = sp.x * (1-blend) + pp.x * blend;
+    const y = sp.y * (1-blend) + pp.y * blend;
+    pts.push(new THREE.Vector2(x,y));
+  }
+
+  const shape = new THREE.Shape(pts);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: t,
+    bevelEnabled: false,
+    bevelThickness: 0,
+    bevelSize: 0,
+    bevelSegments: 0,
+    curveSegments: 0,
+    steps: 1
+  });
+  geo.rotateX(Math.PI/2);
+  geo.translate(0, t/2, 0);
+  return { geo, pts };
+}
+
 function buildSuperellipseTop(rxIn, rzIn, exp){
   const rx = rxIn * SCALE;
   const rz = rzIn * SCALE;
@@ -539,10 +616,12 @@ function populate(){
   presetSel.value = "0";
 
   // Enforce leg-count rules based on selected shape:
-  // - rectangle, square, oval => always 4 legs (disable count selector)
-  // - round => allow selecting 1/2/3/4 (enable count selector)
+  // Enforce leg-count rules based on selected shape:
+  // - rectangle => always 4 legs (disable count selector)
+  // - round, oval, square, hexagon => allow selecting 1/3/4 (enable count selector, pedestal allowed)
   if(legCountEl){
-    if(shapeSel.value === 'round'){
+    const allowCounts = ['round','oval','square','hexagon'];
+    if(allowCounts.includes(shapeSel.value)){
       legCountEl.disabled = false;
     } else {
       legCountEl.value = '4';
@@ -563,6 +642,11 @@ function selectionToParams(shape, preset){
   if(shape === "oval"){
     return { rx: preset.w/2, rz: preset.d/2, exp: 2.0 };
   }
+  if(shape === "hexagon"){
+    const r = preset.dia/2;
+    // sides = 6 signals buildPolygonTop and polygon sampling for legs
+    return { rx: r, rz: r, exp: 2.0, sides: 6 };
+  }
   // rectangle / square
   // Use exp ~ 10 to look boxy like BoxGeometry but still morphable & bevelable.
   return { rx: preset.w/2, rz: preset.d/2, exp: 100.0 };
@@ -573,9 +657,10 @@ function selectionToLegParams(){
   const height = Number(legHeightEl?.value || DEFAULT_LEG_HEIGHT);
   const style = legStyleEl?.value || 'cyl';
   const styleMix = (style === 'cyl') ? 1.0 : (style === 'box' ? 0.0 : 1.0);
-  // If the selected shape is not round, force 4 legs
+  // Allowed shapes that can select non-4 counts (including pedestal)
+  const allowedMulti = ['round','oval','square','hexagon'];
   const rawCount = Number(legCountEl?.value || DEFAULT_LEG_COUNT);
-  const count = (shapeSel.value === 'round') ? rawCount : 4;
+  const count = (allowedMulti.includes(shapeSel.value)) ? rawCount : 4;
   const taper = Number(legTaperEl?.value || DEFAULT_LEG_TAPER);
   const inset = Number(legInsetEl?.value || DEFAULT_LEG_INSET);
   const rot3 = Number(leg3rotEl?.value || DEFAULT_LEG_3ROT);
@@ -617,7 +702,10 @@ function computeLegPositions(rxIn, rzIn, exp, insetInches, count=4, preferCorner
   const inset = insetInches * SCALE;
 
   // Sample the profile points (x,z) around the shape
-  const pts = superellipsePoints(rx, rz, exp, 720);
+  // If callers provide a `sides` argument (8th arg), sample polygon points instead
+  let sides = null;
+  if(arguments.length >= 8) sides = arguments[7];
+  const pts = (sides && sides > 2) ? polygonPoints(rx, rz, sides, sides * 24) : superellipsePoints(rx, rz, exp, 720);
 
   // Special case: pedestal / single leg at center
   if(count <= 1){
@@ -659,6 +747,45 @@ function computeLegPositions(rxIn, rzIn, exp, insetInches, count=4, preferCorner
     positions.push({ x: pos.x, z: pos.y });
   }
 
+  return positions;
+}
+
+// Compute leg anchor positions from an already-sampled perimeter `pts` (array of Vector2)
+function computeLegPositionsFromPts(pts, inset, count=4, preferCorners=false, rotOffsetDeg=0){
+  // Special case: pedestal / single leg at center
+  if(count <= 1) return [{ x: 0, z: 0 }];
+
+  if(preferCorners && count === 4){
+    const quads = [ {sx:1, sz:1}, {sx:-1, sz:1}, {sx:-1, sz:-1}, {sx:1, sz:-1} ];
+    const positions = [];
+    for(const q of quads){
+      let best = null;
+      let bestScore = -Infinity;
+      for(const p of pts){
+        const score = p.x * q.sx + p.y * q.sz;
+        if(score > bestScore){ bestScore = score; best = p; }
+      }
+      const dir = best.clone().normalize();
+      const pos = best.clone().sub(dir.multiplyScalar(inset));
+      positions.push({ x: pos.x, z: pos.y });
+    }
+    return positions;
+  }
+
+  const positions = [];
+  for(let i=0;i<count;i++){
+    const ang = (i / count) * Math.PI * 2 + (rotOffsetDeg * Math.PI / 180);
+    const dir = new THREE.Vector2(Math.cos(ang), Math.sin(ang));
+    let best = null;
+    let bestScore = -Infinity;
+    for(const p of pts){
+      const score = p.x * dir.x + p.y * dir.y;
+      if(score > bestScore){ bestScore = score; best = p; }
+    }
+    const inward = best.clone().normalize().multiplyScalar(inset);
+    const pos = best.clone().sub(inward);
+    positions.push({ x: pos.x, z: pos.y });
+  }
   return positions;
 }
 
@@ -731,7 +858,7 @@ function buildLegs(params, legOpts){
   const inset = LEG_INSET * SCALE;
   const preferCorners = (shapeSel.value !== 'round');
   const rotOffset = (legOpts.count === 3) ? (legOpts.rot3 || DEFAULT_LEG_3ROT) : 0;
-  const positions = computeLegPositions(params.rx, params.rz, params.exp, legOpts.inset || LEG_INSET, legOpts.count || DEFAULT_LEG_COUNT, preferCorners, rotOffset);
+  const positions = computeLegPositions(params.rx, params.rz, params.exp, legOpts.inset || LEG_INSET, legOpts.count || DEFAULT_LEG_COUNT, preferCorners, rotOffset, params.sides || 0);
 
   // Determine tabletop underside (top of legs should meet this Y)
   let topY = 0 - (THICKNESS * SCALE) / 2; // fallback
@@ -754,7 +881,8 @@ function buildLegs(params, legOpts){
 
 function buildAt(params){
   disposeGroup();
-  const geo = buildSuperellipseTop(params.rx, params.rz, params.exp);
+  // Choose polygon builder when a sides count is provided (e.g., hexagon)
+  const geo = (params && params.sides && params.sides > 2) ? buildPolygonTop(params.rx, params.rz, params.sides) : buildSuperellipseTop(params.rx, params.rz, params.exp);
   mesh = new THREE.Mesh(geo, fillMaterial);
   mesh.position.y = (THICKNESS*SCALE)/2;
   group.add(mesh);
@@ -807,20 +935,31 @@ function applyMorph(){
     rz: morph.from.rz + (morph.to.rz - morph.from.rz) * e,
     exp: morph.from.exp + (morph.to.exp - morph.from.exp) * e
   };
+  // Determine polygon blending factor (0=superellipse, 1=polygon)
+  const sf = morph.from?.sides;
+  const st = morph.to?.sides;
+  const fHas = !!sf; const tHas = !!st;
+  let polygonBlend = 0;
+  let sides = (sf || st) || 0;
+  if(fHas && tHas){
+    // both polygonal: if same sides, keep polygon fully; otherwise, blend by switching at halfway
+    if(sf === st){ polygonBlend = 1.0; sides = sf; }
+    else { polygonBlend = (t > 0.5) ? 1.0 : 0.0; sides = (t > 0.5) ? st : sf; }
+  } else if(fHas && !tHas){
+    // fading out polygon -> superellipse
+    polygonBlend = 1.0 - e;
+    sides = sf;
+  } else if(!fHas && tHas){
+    // fading in polygon
+    polygonBlend = e;
+    sides = st;
+  } else {
+    polygonBlend = 0.0;
+    sides = 0;
+  }
 
   // Rebuild geometry each frame to keep bevel + outline EXACTLY like original.
   // These are small meshes, so it's still smooth on modern machines.
-  const oldGeo = mesh.geometry;
-  mesh.geometry = buildSuperellipseTop(p.rx, p.rz, p.exp);
-  oldGeo.dispose();
-
-  // Rebuild edges too (EdgesGeometry depends on mesh triangles)
-  const oldEdgesGeo = outline.geometry;
-  outline.geometry = new THREE.EdgesGeometry(mesh.geometry);
-  oldEdgesGeo.dispose();
-  outline.computeLineDistances();
-
-  // Rebuild legs to match interpolated params
   // Interpolate leg params from morph.legs so legs smoothly transition
   let legOpts = { enabled: false, height: DEFAULT_LEG_HEIGHT, styleMix: 1.0 };
   if(morph?.legs){
@@ -850,7 +989,62 @@ function applyMorph(){
   } else {
     legOpts = selectionToLegParams();
   }
-  buildLegs(p, legOpts);
+
+  const oldGeo = mesh.geometry;
+  // Use blended top when polygon blending is involved so transitions are smooth
+  if(sides && sides > 2 && polygonBlend > 0){
+    const built = buildBlendedTop(p.rx, p.rz, p.exp, sides, polygonBlend, 160);
+    mesh.geometry = built.geo;
+    oldGeo.dispose();
+    // Rebuild outline to match new geometry
+    if(outline){
+      const oldEdgesGeo = outline.geometry;
+      outline.geometry = new THREE.EdgesGeometry(mesh.geometry);
+      oldEdgesGeo.dispose();
+      outline.computeLineDistances();
+    }
+    // compute leg positions from blended perimeter so legs stay smoothly attached
+    // Use interpolated legOpts if available, otherwise fall back to current selection
+    const lop = legOpts || selectionToLegParams();
+    const inset = lop.inset || DEFAULT_LEG_INSET;
+    const preferCorners = (shapeSel.value !== 'round');
+    const rotOffset = (lop.count === 3) ? (lop.rot3 || DEFAULT_LEG_3ROT) : 0;
+    const positions = computeLegPositionsFromPts(built.pts, inset * SCALE, lop.count || DEFAULT_LEG_COUNT, preferCorners, rotOffset);
+    // rebuild legs directly from these positions
+    clearLegs();
+    if(lop && lop.enabled){
+      legGroup = new THREE.Group();
+      let topY = 0 - (THICKNESS * SCALE) / 2;
+      try{ topY = new THREE.Box3().setFromObject(mesh).min.y; }catch(e){}
+      for(const pos of positions){
+        const styleMix = (typeof legOpts.styleMix === 'number') ? legOpts.styleMix : (legOpts.style === 'cyl' ? 1.0 : 0.0);
+        const taper = (typeof legOpts.taper === 'number') ? legOpts.taper : DEFAULT_LEG_TAPER;
+        const styleName = legOpts.style || (styleMix === 1.0 ? 'cyl' : 'box');
+        const leg = makeLegMeshMorph(pos.x, pos.z, legOpts.height, styleMix, topY, taper, styleName);
+        legGroup.add(leg);
+      }
+      group.add(legGroup);
+    }
+  } else {
+    mesh.geometry = buildSuperellipseTop(p.rx, p.rz, p.exp);
+    oldGeo.dispose();
+    // Rebuild edges too (EdgesGeometry depends on mesh triangles)
+    const oldEdgesGeo = outline.geometry;
+    outline.geometry = new THREE.EdgesGeometry(mesh.geometry);
+    oldEdgesGeo.dispose();
+    outline.computeLineDistances();
+    // Rebuild legs normally
+    buildLegs(p, legOpts);
+  }
+
+  // Rebuild edges too (EdgesGeometry depends on mesh triangles)
+  const oldEdgesGeo = outline.geometry;
+  outline.geometry = new THREE.EdgesGeometry(mesh.geometry);
+  oldEdgesGeo.dispose();
+  outline.computeLineDistances();
+
+  // (legOpts was computed earlier before geometry rebuild)
+  buildLegs(Object.assign({}, p, { sides }), legOpts);
 
   // Smooth camera
   camera.position.lerpVectors(morph.camFromPos, morph.camToPos, e);
